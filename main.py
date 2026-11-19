@@ -80,6 +80,65 @@ def process_job(job_id: str, url: str, count: int, duration: int):
     except Exception as e:
         JOBS[job_id].update(status='error',progress=100,message=str(e)[:500])
 
+def process_uploaded_job(job_id: str, src_path: str, count: int, duration: int):
+    jobdir = WORK / job_id
+    src = Path(src_path)
+    try:
+        JOBS[job_id].update(status='analyzing', progress=35, message='Analyzing video…')
+
+        probe = run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(src)])
+        total = float(probe.strip())
+        if total < 5:
+            raise RuntimeError('This video is too short to make clips.')
+
+        import numpy as np
+        import wave
+
+        wav = jobdir / 'audio.wav'
+        run(['ffmpeg','-y','-i',str(src),'-vn','-ac','1','-ar','8000','-f','wav',str(wav)])
+
+        with wave.open(str(wav),'rb') as wf:
+            rate = wf.getframerate()
+            raw = wf.readframes(wf.getnframes())
+
+        audio = np.frombuffer(raw,dtype=np.int16).astype(np.float32)
+        step = rate * 2
+        energies = []
+
+        for i in range(0,len(audio),step):
+            chunk = audio[i:i+step]
+            if len(chunk):
+                energies.append((i/rate,float(np.sqrt(np.mean(chunk*chunk)))))
+
+        ranked = sorted(energies,key=lambda x:x[1],reverse=True)
+        chosen = []
+
+        for t,score in ranked:
+            start = max(0,min(total-duration,t-duration*0.35))
+            if all(abs(start-s)>duration*0.8 for s in chosen):
+                chosen.append(start)
+            if len(chosen)>=count:
+                break
+
+        if not chosen:
+            chosen = [max(0,(total-duration)/2)]
+
+        chosen = sorted(chosen)
+        outputs = []
+
+        JOBS[job_id].update(status='rendering',progress=60,message='Creating vertical gaming clips…')
+
+        for idx,start in enumerate(chosen,1):
+            out = WORK/'outputs'/f'{job_id}_{idx}.mp4'
+            run(['ffmpeg','-y','-ss',str(start),'-i',str(src),'-t',str(min(duration,total-start)),'-vf',"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30",'-c:v','libx264','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k','-movflags','+faststart',str(out)])
+            outputs.append({'name':f'Gaming highlight {idx}','url':f'/outputs/{out.name}','start':round(start,1)})
+            JOBS[job_id].update(progress=60+int(35*idx/len(chosen)),message=f'Rendered clip {idx} of {len(chosen)}…')
+
+        JOBS[job_id].update(status='done',progress=100,message='Your clips are ready!',clips=outputs)
+
+    except Exception as e:
+        JOBS[job_id].update(status='error',progress=100,message=str(e)[:500])
+                
 @app.get('/')
 def home(): return FileResponse(ROOT/'index.html')
 
@@ -102,3 +161,56 @@ def create_clip(req: ClipRequest, bg: BackgroundTasks):
 def status(job_id:str):
     if job_id not in JOBS: raise HTTPException(404,'Job not found.')
     return JOBS[job_id]
+
+@app.post('/api/upload')
+def upload_video(
+    bg: BackgroundTasks,
+    video: UploadFile = File(...),
+    count: int = Form(...),
+    duration: int = Form(...)
+):
+    if count not in range(1, 6) or duration not in [15, 20, 25, 30, 40, 45, 60]:
+        raise HTTPException(400, 'Choose 1–5 clips and a supported clip length.')
+
+    allowed = {'.mp4', '.mov', '.mkv', '.webm'}
+    ext = Path(video.filename or '').suffix.lower()
+
+    if ext not in allowed:
+        raise HTTPException(400, 'Upload an MP4, MOV, MKV or WEBM video.')
+
+    job_id = uuid.uuid4().hex[:12]
+    jobdir = WORK / job_id
+    jobdir.mkdir(parents=True, exist_ok=True)
+    src = jobdir / ('source' + ext)
+
+    try:
+        size = 0
+        with src.open('wb') as f:
+            while True:
+                chunk = video.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > 1500 * 1024 * 1024:
+                    raise HTTPException(413, 'Video must be smaller than 1.5 GB.')
+                f.write(chunk)
+
+        if size == 0:
+            raise HTTPException(400, 'The uploaded video is empty.')
+
+    except Exception:
+        src.unlink(missing_ok=True)
+        raise
+    finally:
+        video.file.close()
+
+    JOBS[job_id] = {
+        'status': 'queued',
+        'progress': 0,
+        'message': 'Uploaded video queued…',
+        'clips': []
+    }
+
+    bg.add_task(process_uploaded_job, job_id, str(src), count, duration)
+    return {'job_id': job_id}
+        
