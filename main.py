@@ -1,7 +1,7 @@
 import os, re, uuid, shutil, subprocess, threading
 from pathlib import Path
 from typing import Dict
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl
