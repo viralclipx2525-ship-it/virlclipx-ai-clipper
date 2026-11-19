@@ -5,7 +5,66 @@
 <input id="video" type="file" accept="video/mp4,video/quicktime,video/x-matroska,video/webm">
 <label class="field-label" for="video">Or upload a video from your phone</label>
 <input id="video" type="file" accept="video/mp4,video/quicktime,video/x-matroska,video/webm">"https://www.youtube.<div class="options"><div><label class="field-label" for="count">Number of clips</label><select id="count"><option value="3">3 clips</option><option value="1">1 clip</option><option value="2">2 clips</option><option value="4">4 clips</option><option value="5">5 clips</option></select></div><div><label class="field-label" for="duration">Clip length</label><select id="duration"><option>25</option><option>15</option><option>20</option><option>30</option><option>40</option><option>45</option><option>60</option></select></div></div><button class="btn" id="submit">✦ GENERATE GAMING CLIPS</button></form><div class="progress" id="progress"><strong id="status">Preparing…</strong><div class="bar"><span id="bar"></span></div><small id="detail" class="note">Please keep this page open while the server processes your video.</small></div><div id="results" class="results"></div><div class="note">Use only videos you own or have permission to download, edit and repost. This demo selects high-audio-activity moments; it does not understand game context like a human editor.</div></main><section class="features"><div class="feature">⚡ <strong>Automatic highlights</strong><small>Audio activity scoring</small></div><div class="feature">▣ <strong>Vertical 9:16</strong><small>Shorts & Reels format</small></div><div class="feature">$ <strong>Open source</strong><small>No per-clip API credits</small></div></section><div class="footer">VIRLCLIPX · Built for creators · Processing costs depend on where you host it</div></div><script>
-const form=document.getElementById('form'),btn=document.getElementById('submit'),prog=document.getElementById('progress'),bar=document.getElementById('bar'),statusEl=document.getElementById('status'),detail=document.getElementById('detail'),results=document.getElementById('results');
-form.addEventListener('submit',async e=>{e.preventDefault();results.innerHTML='';btn.disabled=true;btn.textContent='STARTING…';prog.style.display='block';bar.style.width='2%';statusEl.textContent='Starting your clip job…';detail.textContent='The server will fetch and analyze the video.';try{const r=await fetch('/api/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:document.getElementById('url').value,count:+document.getElementById('count').value,duration:+document.getElementById('duration').value})});const d=await r.json();if(!r.ok)throw Error(d.detail||'Could not start job');poll(d.job_id)}catch(err){statusEl.textContent='Could not start';detail.textContent=err.message;btn.disabled=false;btn.textContent='✦ GENERATE GAMING CLIPS'}});
+
+form.addEventListener('submit', async e => {
+    e.preventDefault();
+
+    const video = document.getElementById('video').files[0];
+    const url = document.getElementById('url').value.trim();
+
+    if (!video && !url) {
+        alert('Please enter a YouTube link or select a video.');
+        return;
+    }
+
+    results.innerHTML = '';
+    btn.disabled = true;
+    btn.textContent = 'STARTING…';
+    prog.style.display = 'block';
+    bar.style.width = '2%';
+    statusEl.textContent = 'Starting your clip job…';
+
+    try {
+        let r;
+
+        if (video) {
+            const data = new FormData();
+            data.append('video', video);
+            data.append('count', document.getElementById('count').value);
+            data.append('duration', document.getElementById('duration').value);
+
+            detail.textContent = 'Uploading your phone video…';
+
+            r = await fetch('/api/upload', {
+                method: 'POST',
+                body: data
+            });
+        } else {
+            detail.textContent = 'The server will fetch and analyze the video.';
+
+            r = await fetch('/api/clip', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    url: url,
+                    count: +document.getElementById('count').value,
+                    duration: +document.getElementById('duration').value
+                })
+            });
+        }
+
+        const d = await r.json();
+        if (!r.ok) throw Error(d.detail || 'Could not start job');
+
+        poll(d.job_id);
+
+    } catch (err) {
+        statusEl.textContent = 'Could not start';
+        detail.textContent = err.message;
+        btn.disabled = false;
+        btn.textContent = '✦ GENERATE GAMING CLIPS';
+    }
+});
+  
 async function poll(id){try{const r=await fetch('/api/status/'+id),d=await r.json();bar.style.width=d.progress+'%';statusEl.textContent=d.status==='done'?'Your clips are ready!':d.status==='error'?'Something went wrong':d.message;detail.textContent=d.message;if(d.status==='done'){results.innerHTML=d.clips.map(c=>`<div class="clip"><strong>${c.name}</strong><div class="note">Source starts at ${c.start}s</div><a href="${c.url}" download>↓ Download MP4</a></div>`).join('');btn.disabled=false;btn.textContent='✦ GENERATE MORE CLIPS';return}if(d.status==='error'){btn.disabled=false;btn.textContent='✦ TRY AGAIN';return}setTimeout(()=>poll(id),2500)}catch(e){detail.textContent='Lost connection while checking progress. Refresh and try again.';btn.disabled=false;btn.textContent='✦ TRY AGAIN'}}
 </script></body></html>
