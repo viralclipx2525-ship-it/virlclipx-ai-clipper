@@ -11,6 +11,7 @@ WORK = Path(os.getenv('WORK_DIR', '/tmp/virlclipx'))
 WORK.mkdir(parents=True, exist_ok=True)
 JOBS: Dict[str, dict] = {}
 app = FastAPI(title='VirlClipX AI Clipper')
+(WORK / 'outputs').mkdir(parents=True, exist_ok=True)
 app.mount('/outputs', StaticFiles(directory=WORK / 'outputs'), name='outputs')
 (WORK / 'outputs').mkdir(exist_ok=True)
 
