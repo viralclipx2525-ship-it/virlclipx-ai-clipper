@@ -6,12 +6,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 WORK = Path(os.getenv('WORK_DIR', '/tmp/virlclipx'))
 WORK.mkdir(parents=True, exist_ok=True)
 JOBS: Dict[str, dict] = {}
 app = FastAPI(title='VirlClipX AI Clipper')
-app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
+
 app.mount('/outputs', StaticFiles(directory=WORK / 'outputs'), name='outputs')
 (WORK / 'outputs').mkdir(exist_ok=True)
 
@@ -81,7 +81,7 @@ def process_job(job_id: str, url: str, count: int, duration: int):
         JOBS[job_id].update(status='error',progress=100,message=str(e)[:500])
 
 @app.get('/')
-def home(): return FileResponse(ROOT/'static'/'index.html')
+def home(): return FileResponse(ROOT/'index.html')
 
 @app.get('/api/health')
 def health(): return {'ok':True,'name':'VirlClipX AI Clipper'}
